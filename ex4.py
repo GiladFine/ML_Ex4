@@ -4,6 +4,8 @@ from gcommand_loader import GCommandLoader
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
+import torch.optim as optim
+
 
 # Activate cuda for GPU device
 torch.cuda.init()
@@ -49,13 +51,14 @@ class ML_Model(nn.Module):
 
 class NN(object):
 
-    def __init__(self, train_loader, validation_loader ):
+    def __init__(self, train_loader, validation_loader):
         self.train_loader = train_loader
         self.validation_loader = validation_loader
 
     def __evaluate(self, model, loader):
         model.eval()
         number_of_hits = 0
+        number_of_records = 0
 
         for records, labels in loader:
             # input & labels vector sized by batch size
@@ -66,14 +69,15 @@ class NN(object):
             probabilities = model(records)
             predictions = torch.argmax(probabilities, dim=1)
 
-            for i in range(BATCH_SIZE):
+            number_of_records += len(predictions)
+            for i in range(len(predictions)):
                 if predictions[i] == labels[i]:
                     number_of_hits += 1
 
-        return number_of_hits / BATCH_SIZE
+        return number_of_hits / number_of_records
 
 
-    def __train_epoch(self, model, loss_function):
+    def __train_iteration(self, model, loss_function, optimizer):
         model.train()
         loss_sum = 0
 
@@ -85,6 +89,7 @@ class NN(object):
             probabilities = model(records)
             loss = loss_function(probabilities, labels)
             loss.backward()
+            optimizer.step()
             loss_sum += loss.item()
 
         # Return average loss
@@ -97,9 +102,10 @@ class NN(object):
         model = ML_Model()
         model.to(DEVICE)
 
+        optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
         for iter in range(NUMBER_OF_ITERATIONS):
             print('iteration number '+ str(iter + 1) + ':')
-            loss = self.__train_epoch(model, loss_function)
+            loss = self.__train_iteration(model, loss_function, optimizer)
 
             train_accuracy = self.__evaluate(model, self.train_loader)
             print('train accuracy - ', train_accuracy)
