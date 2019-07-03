@@ -7,7 +7,7 @@ import torch.nn as nn
 import torch.optim as optim
 
 # Activate cuda for GPU device
-torch.cuda.init()
+#torch.cuda.init()
 DEVICE = 'cuda:0' if torch.cuda.is_available() else 'cpu'
 
 # Paths
