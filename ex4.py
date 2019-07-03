@@ -40,7 +40,7 @@ class ML_Model(nn.Module):
                                           nn.LeakyReLU(),
                                           nn.MaxPool2d(2, 2))
 
-        self.conv_layer_2 = nn.Sequential(nn.Conv2d(8, 16, (5, 5)),
+        self.conv_layer_2 = nn.Sequential(nn.Conv2d(8, 16, 5),
                                           nn.LeakyReLU(),
                                           nn.MaxPool2d(2, 2))
 
@@ -72,12 +72,7 @@ class NN(object):
     """
     This class represents a generic NN structure (No parameters)
     """
-
-    def __init__(self, train_loader, validation_loader):
-        self.train_loader = train_loader
-        self.validation_loader = validation_loader
-
-    def __accuracy(self, model, loader):
+    def __accuracy(self, model, data_loader):
         """
         Evaluate the model and use the softmax output to calc number of correct records out of the data - accuracy
         :param model: ML_Model class
@@ -88,7 +83,7 @@ class NN(object):
         number_of_hits = 0
         number_of_records = 0
 
-        for records, labels in loader:
+        for records, labels in data_loader:
             # input & labels vector sized by batch size
             records = records.to(DEVICE)
             labels = torch.LongTensor(labels).to(DEVICE)
@@ -105,7 +100,7 @@ class NN(object):
         return number_of_hits / number_of_records
 
 
-    def __train_one_iteration(self, model, loss_function, optimizer):
+    def __train_one_iteration(self, model, loss_function, optimizer, train_loader):
         """
         Trains one iteration(epoch) of the model
         :param model: ML_Model
@@ -116,7 +111,7 @@ class NN(object):
         model.train()
         loss_sum = 0
 
-        for records, labels in self.train_loader:
+        for records, labels in train_loader:
             records = records.to(DEVICE)
             labels = torch.LongTensor(labels).to(DEVICE)
 
@@ -128,10 +123,10 @@ class NN(object):
             loss_sum += loss.item()
 
         # Return average loss
-        return loss_sum / len(self.train_loader)
+        return loss_sum / len(train_loader)
 
 
-    def train(self):
+    def train(self, train_loader, validation_loader):
         """
         Train the network multiple times
         :return: the nn.module being used (ML_Model in our case)
@@ -144,10 +139,10 @@ class NN(object):
         adam_optim = optim.Adam(model.parameters(), lr=LEARNING_RATE)
         for iter in range(NUMBER_OF_ITERATIONS):
             print('iteration number '+ str(iter + 1) + ':')
-            loss = self.__train_one_iteration(model, loss_function, adam_optim)
+            loss = self.__train_one_iteration(model, loss_function, adam_optim, train_loader)
 
-            train_accuracy = self.__accuracy(model, self.train_loader)
-            validation_accuracy = self.__accuracy(model, self.validation_loader)
+            train_accuracy = self.__accuracy(model, train_loader)
+            validation_accuracy = self.__accuracy(model, validation_loader)
 
             print('train accuracy - ' + str(100 * train_accuracy) + "%")
             print('validation accuracy - ' + str(100 * validation_accuracy) + "%")
@@ -199,8 +194,8 @@ def main():
         validation_set, batch_size=BATCH_SIZE, shuffle=True,
         num_workers=NUMBER_OF_WORKERS, pin_memory=True)
 
-    nn = NN(train_loader, validation_loader)
-    nn_model = nn.train()
+    nn = NN()
+    nn_model = nn.train(train_loader, validation_loader)
 
     # Writes the model to a file, this is the input for the predict func
     torch.save(nn_model.state_dict(), MODEL_FILE)
