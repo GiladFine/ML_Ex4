@@ -1,43 +1,62 @@
 import os
 import torch
 from gcommand_loader import GCommandLoader
-import torch.nn as nn
-import torch.nn.functional as F
 from torch.utils.data import DataLoader
+import torch.nn.functional as F
+import torch.nn as nn
 import torch.optim as optim
-
 
 # Activate cuda for GPU device
 torch.cuda.init()
 DEVICE = 'cuda:0' if torch.cuda.is_available() else 'cpu'
 
+# Paths
+TRAIN_DIR = 'data/train'
+TEST_DIR = 'data/test'
+VALIDATION_DIR = 'data/valid'
+
+MODEL_FILE = 'ML_Ex4.model'
+OUTPUT_FILE = 'test_y'
+
 # Hyper-parameters
 LEARNING_RATE = 0.00015
-NUMBER_OF_ITERATIONS = 100
+NUMBER_OF_ITERATIONS = 50
 BATCH_SIZE = 80
 NUMBER_OF_WORKERS = 20
 
 class ML_Model(nn.Module):
+    """
+    This Class represents an NN model by extending nn.module
+    """
 
     def __init__(self):
-
+        """
+        Initialize the network layers param
+        """
         super(ML_Model, self).__init__()
 
+        # Convolution layers
         self.conv_layer_1 = nn.Sequential(nn.Conv2d(1, 8, 6),
-                                          nn.ReLU(),
+                                          nn.LeakyReLU(),
                                           nn.MaxPool2d(2, 2))
 
         self.conv_layer_2 = nn.Sequential(nn.Conv2d(8, 16, (5, 5)),
-                                          nn.ReLU(),
+                                          nn.LeakyReLU(),
                                           nn.MaxPool2d(2, 2))
 
+        # Fully connected layers
         self.fc_layer_1 = nn.Sequential(nn.Linear(16 * 37 * 22, 800),
-                                        nn.ReLU(),
+                                        nn.LeakyReLU(),
                                         nn.Dropout(p=0.5))
 
         self.fc_layer_2 = nn.Sequential(nn.Linear(800, 30))
 
     def forward(self, x):
+        """
+        Feed x forward in the net
+        :param x: data record
+        :return: Softmax distribution over the output layer classes
+        """
         x = self.conv_layer_1(x)
         x = self.conv_layer_2(x)
 
@@ -50,12 +69,21 @@ class ML_Model(nn.Module):
 
 
 class NN(object):
+    """
+    This class represents a generic NN structure (No parameters)
+    """
 
     def __init__(self, train_loader, validation_loader):
         self.train_loader = train_loader
         self.validation_loader = validation_loader
 
-    def __evaluate(self, model, loader):
+    def __accuracy(self, model, loader):
+        """
+        Evaluate the model and use the softmax output to calc number of correct records out of the data - accuracy
+        :param model: ML_Model class
+        :param loader: DataLoader class
+        :return: accuracy
+        """
         model.eval()
         number_of_hits = 0
         number_of_records = 0
@@ -77,7 +105,14 @@ class NN(object):
         return number_of_hits / number_of_records
 
 
-    def __train_iteration(self, model, loss_function, optimizer):
+    def __train_one_iteration(self, model, loss_function, optimizer):
+        """
+        Trains one iteration(epoch) of the model
+        :param model: ML_Model
+        :param loss_function: Pre-determined loss func (NLL, Cross-entropy, Hinge...)
+        :param optimizer: Pre-determined optimizer (Adam, AdaGrad, SGD...)
+        :return: Average loss for this iteration
+        """
         model.train()
         loss_sum = 0
 
@@ -97,35 +132,43 @@ class NN(object):
 
 
     def train(self):
+        """
+        Train the network multiple times
+        :return: the nn.module being used (ML_Model in our case)
+        """
 
-        loss_function = nn.CrossEntropyLoss()
+        loss_function = nn.NLLLoss()
         model = ML_Model()
         model.to(DEVICE)
 
-        optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
+        adam_optim = optim.Adam(model.parameters(), lr=LEARNING_RATE)
         for iter in range(NUMBER_OF_ITERATIONS):
             print('iteration number '+ str(iter + 1) + ':')
-            loss = self.__train_iteration(model, loss_function, optimizer)
+            loss = self.__train_one_iteration(model, loss_function, adam_optim)
 
-            train_accuracy = self.__evaluate(model, self.train_loader)
-            print('train accuracy - ', train_accuracy)
+            train_accuracy = self.__accuracy(model, self.train_loader)
+            validation_accuracy = self.__accuracy(model, self.validation_loader)
 
-            validation_accuracy = self.__evaluate(model, self.validation_loader)
-            print('validation accuracy - ', validation_accuracy)
-
+            print('train accuracy - ' + str(100 * train_accuracy) + "%")
+            print('validation accuracy - ' + str(100 * validation_accuracy) + "%")
             print('loss - ', loss)
 
         return model
 
     def predict(self):
-        test_set = GCommandLoader('data/test')
+        """
+        Predict the test set labels and writes them to test_y
+        """
+        test_set = GCommandLoader(TEST_DIR)
         test_loader = DataLoader(
             test_set, batch_size=BATCH_SIZE, shuffle=False,
             num_workers=NUMBER_OF_WORKERS, pin_memory=True)
 
         files = [os.path.basename(f[0]) for f in test_set.spects]
         model = ML_Model()
-        model.load_state_dict(torch.load('ML_Ex4.model'))
+
+        # Loading the model from file
+        model.load_state_dict(torch.load(MODEL_FILE))
 
         model.to(DEVICE)
         model.eval()
@@ -138,15 +181,15 @@ class NN(object):
 
             # Write to test_y file
             for pred in predictions:
-                with open('test_y', 'a+') as file:
+                with open(OUTPUT_FILE, 'a+') as file:
                     file.write(files[sound_files_index] + ', ' + str(pred.item()) + '\n')
                 sound_files_index += 1
 
 
 def main():
 
-    train_set = GCommandLoader('data/train')
-    validation_set = GCommandLoader('data/valid')
+    train_set = GCommandLoader(TRAIN_DIR)
+    validation_set = GCommandLoader(VALIDATION_DIR)
 
     train_loader = DataLoader(
         train_set, batch_size=BATCH_SIZE, shuffle=True,
@@ -157,12 +200,10 @@ def main():
         num_workers=NUMBER_OF_WORKERS, pin_memory=True)
 
     nn = NN(train_loader, validation_loader)
+    nn_model = nn.train()
 
-    # Train and evaluate model
-    model = nn.train()
-
-    # Saved trained model to file
-    torch.save(model.state_dict(), 'ML_Ex4.model')
+    # Writes the model to a file, this is the input for the predict func
+    torch.save(nn_model.state_dict(), MODEL_FILE)
 
     nn.predict()
 
